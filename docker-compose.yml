@@ -1,0 +1,88 @@
+services:
+  app:
+    build: .
+    container_name: bot_app
+    env_file: .env
+    environment:
+      # подстраховка, если нет в .env (pydantic раньше ругался)
+      OPENSEARCH_SSL: "0"
+      OPENSEARCH_VERIFY: "0"
+      TIKA_URL: "http://tika:9998"
+      OPENSEARCH_HOST: "opensearch"
+      OPENSEARCH_PORT: "9200"
+      OPENSEARCH_SCHEME: "http"
+      OPENSEARCH_INDEX: "documents"
+      OPENSEARCH_USER: "admin"
+      OPENSEARCH_PASSWORD: "admin"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+      - uploads_data:/data/uploads
+      - synonyms_data:/data/synonyms
+    depends_on:
+      db:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      tika:                     # ← подключаем Tika, чтобы индексация была сразу
+        condition: service_healthy
+    restart: unless-stopped
+    command: python run.py
+
+  db:
+    image: postgres:16-alpine
+    container_name: db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  tika:
+    build:
+      context: .
+      dockerfile: tika.Dockerfile   # см. рабочий Dockerfile ниже
+    ports:
+      - "9998:9998"
+    healthcheck:                    # дублируем на всякий случай (есть и внутри образа)
+      test: ["CMD", "curl", "-sf", "http://localhost:9998/tika"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    platform: linux/arm64/v8         # Apple Silicon
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data   # ← сохраняем индекс между рестартами
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  opensearch_data:
+  uploads_data:
+  synonyms_data:

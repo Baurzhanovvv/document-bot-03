@@ -1,0 +1,18 @@
+{
+  "type": "notification",
+  "event": "payment.succeeded",
+  "object": {
+    "id": "test-payment-123",
+    "status": "succeeded",
+    "paid": true,
+    "amount": {
+      "value": "299.00",
+      "currency": "RUB"
+    },
+    "metadata": {
+      "user_id": "1319778538",
+      "subscription": "monthly"
+    },
+    "created_at": "2024-11-04T20:00:00.000Z"
+  }
+}

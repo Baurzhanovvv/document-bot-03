@@ -1,0 +1,44 @@
+<!-- web/index.html -->
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Файлы — drag & drop</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/static/styles.css" rel="stylesheet" />
+</head>
+<body>
+  <header>
+    <h1>Загрузка и управление файлами</h1>
+  </header>
+
+  <main>
+    <section id="uploader">
+      <div id="dropzone" class="dropzone">
+        <p>Перетащите файлы сюда или выберите по нажатию</p>
+        <input id="fileInput" type="file" multiple />
+      </div>
+      <button id="uploadBtn">Загрузить</button>
+      <div id="uploadStatus" class="status"></div>
+    </section>
+
+    <section id="files">
+      <h2>Файлы</h2>
+      <div id="fileList" class="grid"></div>
+    </section>
+  </main>
+
+  <template id="fileCardTpl">
+    <div class="card">
+      <div class="title"></div>
+      <div class="meta"></div>
+      <div class="actions">
+        <a class="view" target="_blank" rel="noopener">Открыть</a>
+        <button class="delete">Удалить</button>
+      </div>
+    </div>
+  </template>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
