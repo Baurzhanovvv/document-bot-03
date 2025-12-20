@@ -63,7 +63,7 @@ services:
 
   opensearch:
     image: opensearchproject/opensearch:2.13.0
-    platform: linux/arm64/v8         # Apple Silicon
+    # platform: linux/arm64/v8         # закомментировано для Linux x86_64
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
