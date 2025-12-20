@@ -67,7 +67,8 @@ services:
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m
+      - node.store.allow_mmap=false
     ulimits:
       memlock: { soft: -1, hard: -1 }
     ports:
