@@ -363,12 +363,44 @@ class OpenSearchService:
         if client is None:
             return []
 
-        # Теперь используем простой multi_match - синонимы применяются автоматически
-        body = {
-            "from": max(0, int(offset)),
-            "size": n,
-            "_source": ["filename", "path", "content", "content_indexed"],
-            "query": {
+        terms = [t for t in re.findall(r"\w+", q, flags=re.UNICODE) if t]
+        content_query = q
+        if len(terms) >= 2:
+            file_term = terms[-1]
+            content_query = " ".join(terms[:-1]).strip()
+            # Сначала находим файл по последнему слову, потом ищем фрагмент в его тексте.
+            query_block: Dict[str, Any] = {
+                "bool": {
+                    "must": [
+                        {
+                            "multi_match": {
+                                "query": file_term,
+                                "fields": [
+                                    "filename^5",
+                                    "path^2"
+                                ],
+                                "type": "best_fields",
+                                "operator": "OR",
+                                "fuzziness": "AUTO",
+                                "minimum_should_match": "75%"
+                            }
+                        },
+                        {
+                            "multi_match": {
+                                "query": content_query,
+                                "fields": ["content^3"],
+                                "type": "best_fields",
+                                "operator": "OR",
+                                "fuzziness": "AUTO",
+                                "minimum_should_match": "75%"
+                            }
+                        }
+                    ]
+                }
+            }
+        else:
+            # Теперь используем простой multi_match - синонимы применяются автоматически
+            query_block = {
                 "multi_match": {
                     "query": q,
                     "fields": [
@@ -381,8 +413,13 @@ class OpenSearchService:
                     "fuzziness": "AUTO",  # Автоматическая коррекция опечаток
                     "minimum_should_match": "75%"  # Минимум 75% слов должны совпасть
                 }
-            },
+            }
 
+        body = {
+            "from": max(0, int(offset)),
+            "size": n,
+            "_source": ["filename", "path", "content", "content_indexed"],
+            "query": query_block,
             "highlight": {
                 "fields": {
                     "content": {
@@ -413,9 +450,9 @@ class OpenSearchService:
             # Используем highlight если есть, иначе делаем snippet
             highlight = h.get("highlight") or {}
             if "content" in highlight:
-                snippet = self._make_extended_snippet(content, q, highlight["content"])
+                snippet = self._make_extended_snippet(content, content_query, highlight["content"])
             else:
-                snippet = self._make_extended_snippet(content, q)
+                snippet = self._make_extended_snippet(content, content_query)
 
             out.append({
                 "filename": src.get("filename") or "Документ",
@@ -625,6 +662,5 @@ class OpenSearchService:
         if merged and merged[0][0] > 0:
             parts[0] = "… " + parts[0]
         return html.escape(" ".join(parts))
-
 
 
