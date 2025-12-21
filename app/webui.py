@@ -221,7 +221,8 @@ refreshList();
 
 def create_web_app(upload_dir: Path) -> web.Application:
     upload_dir.mkdir(parents=True, exist_ok=True)
-    app = web.Application()
+    # Allow large uploads (e.g., 1.2GB). aiohttp default is much smaller.
+    app = web.Application(client_max_size=1300 * 1024 ** 2)
 
     # Статика, если существует
     project_root = Path(__file__).resolve().parent.parent
