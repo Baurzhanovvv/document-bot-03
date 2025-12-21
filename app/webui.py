@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import logging
 from pathlib import Path
 from typing import List
@@ -16,6 +17,24 @@ from app.database.requests import get_search_preview
 import html
 
 log = logging.getLogger(__name__)
+
+
+def _safe_filename(name: str, max_bytes: int = 200) -> str:
+    name = os.path.basename(name or "") or "uploaded.bin"
+    base, ext = os.path.splitext(name)
+    ext = ext[:20]
+    if len(name.encode("utf-8")) <= max_bytes:
+        return name
+
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    suffix = f"_{digest}"
+    max_base_bytes = max_bytes - len((suffix + ext).encode("utf-8"))
+    truncated = base
+    while truncated and len(truncated.encode("utf-8")) > max_base_bytes:
+        truncated = truncated[:-1]
+    if not truncated:
+        truncated = "file"
+    return f"{truncated}{suffix}{ext}"
 
 
 def _render_preview_page(query: str, items: List[dict]) -> str:
@@ -263,12 +282,13 @@ def create_web_app(upload_dir: Path) -> web.Application:
                 break
             if part.name != "file":
                 continue
-            filename = os.path.basename(part.filename or "uploaded.bin")
+            max_bytes = 200
+            filename = _safe_filename(part.filename or "uploaded.bin", max_bytes=max_bytes)
             dest = upload_dir / filename
             base, ext = os.path.splitext(filename)
             i = 1
             while dest.exists():
-                filename = f"{base} ({i}){ext}"
+                filename = _safe_filename(f"{base} ({i}){ext}", max_bytes=max_bytes)
                 dest = upload_dir / filename
                 i += 1
             async with aiofiles.open(dest, "wb") as f:
