@@ -1,31 +1,32 @@
 # app/files.py (фрагмент)
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message
-from opensearch_dir.opensearch_service import OpenSearchService
+
+from app.search import handle_search_query
 
 router = Router()
 
-@router.message(F.text & ~F.via_bot)
+SKIP_TEXTS = {
+    "Поиск по документам",
+    "Профиль",
+    "Поддержка",
+    "Назад",
+    "Документы",
+    "Администраторы",
+    "Рассылки",
+    "Пользователи",
+    "Добавить администратора",
+    "Удалить администратора",
+    "Изменить логин и пароль",
+    "Нет фото",
+}
+
+
+@router.message(StateFilter(None), F.text & ~F.via_bot)
 async def do_search(message: Message):
     q = (message.text or "").strip()
-    if not q:
+    if not q or q.startswith("/") or q in SKIP_TEXTS:
         return
 
-    try:
-        svc = OpenSearchService()
-        results = svc.search(q, limit=5)
-    except Exception as e:
-        await message.answer(f"Поиск временно недоступен: {e}")
-        return
-
-    if not results:
-        await message.answer("Ничего не нашёл.")
-        return
-
-    lines = []
-    for r in results:
-        fn = r.get("filename") or "без имени"
-        p = r.get("path") or ""
-        snip = r.get("snippet") or ""
-        lines.append(f"📄 <b>{fn}</b>\n{p}\n{snip}\n")
-    await message.answer("\n".join(lines), parse_mode="HTML")
+    await handle_search_query(message, q)
