@@ -62,7 +62,7 @@ class User(Base):
     number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     location: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     work: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    search_count: Mapped[Optional[int]] = mapped_column(Integer, default=3)
+    search_count: Mapped[Optional[int]] = mapped_column(Integer, default=100)
 
     subs: Mapped[List["Sub"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     payments: Mapped[List["Payment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
