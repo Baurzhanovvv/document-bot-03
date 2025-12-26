@@ -368,35 +368,70 @@ class OpenSearchService:
         if len(terms) >= 2:
             content_query = terms[0]
             file_query = " ".join(terms[1:]).strip()
-            # Сначала находим файл по словосочетанию (все слова после первого),
-            # затем ищем фрагмент в его тексте по первому слову.
+            # Поддерживаем оба порядка: "лечение гепатита" и "гепатит лечение".
             query_block = {
                 "bool": {
-                    "must": [
+                    "should": [
                         {
-                            "multi_match": {
-                                "query": file_query,
-                                "fields": [
-                                    "filename^5",
-                                    "path^2"
-                                ],
-                                "type": "best_fields",
-                                "operator": "AND",
-                                "fuzziness": "AUTO",
-                                "minimum_should_match": "75%"
+                            "bool": {
+                                "must": [
+                                    {
+                                        "multi_match": {
+                                            "query": file_query,
+                                            "fields": [
+                                                "filename^5",
+                                                "path^2"
+                                            ],
+                                            "type": "best_fields",
+                                            "operator": "AND",
+                                            "fuzziness": "AUTO",
+                                            "minimum_should_match": "75%"
+                                        }
+                                    },
+                                    {
+                                        "multi_match": {
+                                            "query": content_query,
+                                            "fields": ["content^3"],
+                                            "type": "best_fields",
+                                            "operator": "OR",
+                                            "fuzziness": "AUTO",
+                                            "minimum_should_match": "75%"
+                                        }
+                                    }
+                                ]
                             }
                         },
                         {
-                            "multi_match": {
-                                "query": content_query,
-                                "fields": ["content^3"],
-                                "type": "best_fields",
-                                "operator": "OR",
-                                "fuzziness": "AUTO",
-                                "minimum_should_match": "75%"
+                            "bool": {
+                                "must": [
+                                    {
+                                        "multi_match": {
+                                            "query": content_query,
+                                            "fields": [
+                                                "filename^5",
+                                                "path^2"
+                                            ],
+                                            "type": "best_fields",
+                                            "operator": "AND",
+                                            "fuzziness": "AUTO",
+                                            "minimum_should_match": "75%"
+                                        }
+                                    },
+                                    {
+                                        "multi_match": {
+                                            "query": file_query,
+                                            "fields": ["content^3"],
+                                            "type": "best_fields",
+                                            "operator": "OR",
+                                            "fuzziness": "AUTO",
+                                            "minimum_should_match": "75%"
+                                        }
+                                    }
+                                ]
                             }
                         }
-                    ]
+                    ],
+                    "minimum_should_match": 1
                 }
             }
         else:
@@ -663,4 +698,3 @@ class OpenSearchService:
         if merged and merged[0][0] > 0:
             parts[0] = "… " + parts[0]
         return html.escape(" ".join(parts))
-
