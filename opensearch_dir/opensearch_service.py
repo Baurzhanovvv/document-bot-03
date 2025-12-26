@@ -366,21 +366,22 @@ class OpenSearchService:
         terms = [t for t in re.findall(r"\w+", q, flags=re.UNICODE) if t]
         content_query = q
         if len(terms) >= 2:
-            file_term = terms[-1]
-            content_query = " ".join(terms[:-1]).strip()
-            # Сначала находим файл по последнему слову, потом ищем фрагмент в его тексте.
-            query_block: Dict[str, Any] = {
+            content_query = terms[0]
+            file_query = " ".join(terms[1:]).strip()
+            # Сначала находим файл по словосочетанию (все слова после первого),
+            # затем ищем фрагмент в его тексте по первому слову.
+            query_block = {
                 "bool": {
                     "must": [
                         {
                             "multi_match": {
-                                "query": file_term,
+                                "query": file_query,
                                 "fields": [
                                     "filename^5",
                                     "path^2"
                                 ],
                                 "type": "best_fields",
-                                "operator": "OR",
+                                "operator": "AND",
                                 "fuzziness": "AUTO",
                                 "minimum_should_match": "75%"
                             }
@@ -662,5 +663,4 @@ class OpenSearchService:
         if merged and merged[0][0] > 0:
             parts[0] = "… " + parts[0]
         return html.escape(" ".join(parts))
-
 
