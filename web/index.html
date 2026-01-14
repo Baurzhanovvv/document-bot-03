@@ -18,8 +18,12 @@
         <p>Перетащите файлы сюда или выберите по нажатию</p>
         <input id="fileInput" type="file" multiple />
       </div>
-      <button id="uploadBtn">Загрузить</button>
+      <div class="controls">
+        <button id="uploadBtn">Загрузить</button>
+        <button id="reindexBtn" class="ghost">Переиндексация</button>
+      </div>
       <div id="uploadStatus" class="status"></div>
+      <div id="reindexStatus" class="status"></div>
     </section>
 
     <section id="files">

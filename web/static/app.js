@@ -3,7 +3,9 @@
 const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("fileInput");
 const uploadBtn = document.getElementById("uploadBtn");
+const reindexBtn = document.getElementById("reindexBtn");
 const statusEl = document.getElementById("uploadStatus");
+const reindexStatus = document.getElementById("reindexStatus");
 const fileList = document.getElementById("fileList");
 const tpl = document.getElementById("fileCardTpl");
 
@@ -47,6 +49,23 @@ uploadBtn.addEventListener("click", async () => {
   } finally {
     uploadBtn.disabled = false;
     fileInput.value = "";
+  }
+});
+reindexBtn.addEventListener("click", async () => {
+  if (!confirm("Переиндексировать все файлы?")) return;
+  reindexBtn.disabled = true;
+  reindexStatus.textContent = "Переиндексация запущена…";
+  try {
+    const resp = await fetch("/api/reindex", { method: "POST" });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data?.error || "reindex failed");
+    reindexStatus.textContent = `Готово: ${data.indexed}/${data.total}`;
+    await refreshList();
+  } catch (e) {
+    console.error(e);
+    reindexStatus.textContent = "Ошибка переиндексации";
+  } finally {
+    reindexBtn.disabled = false;
   }
 });
 async function deleteFile(pathRel) {

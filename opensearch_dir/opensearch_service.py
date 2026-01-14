@@ -312,6 +312,49 @@ class OpenSearchService:
             log.warning("index error: %s", e)
             return {"error": str(e)}
 
+    def reindex_folder(self, folder: Path, *, refresh: bool = True, recreate: bool = True) -> Dict[str, Any]:
+        client = self._get_client()
+        if client is None:
+            return {"error": "opensearch unavailable"}
+
+        target = Path(folder)
+        if not target.exists():
+            return {"error": f"folder not found: {target}"}
+
+        if recreate:
+            try:
+                client.indices.delete(index=self.index, ignore=[404])
+            except Exception as e:
+                log.warning("index delete failed: %s", e)
+            self._ensure_index(client)
+
+        total = 0
+        indexed = 0
+        errors: List[str] = []
+        for p in sorted(target.rglob("*")):
+            if not p.is_file():
+                continue
+            total += 1
+            res = self.index_file(p, refresh=False)
+            if res.get("ok"):
+                indexed += 1
+            else:
+                err = res.get("error") or res.get("skipped") or "unknown error"
+                errors.append(f"{p.name}: {err}")
+
+        if refresh:
+            try:
+                client.indices.refresh(index=self.index)
+            except Exception as e:
+                log.warning("refresh failed: %s", e)
+
+        return {
+            "ok": True,
+            "total": total,
+            "indexed": indexed,
+            "errors": errors[:20],
+        }
+
     def delete_by_path(self, rel_path: str) -> Dict[str, Any]:
         client = self._get_client()
         if client is None:

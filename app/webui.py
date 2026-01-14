@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import hashlib
 import logging
 from pathlib import Path
@@ -169,8 +170,11 @@ main{padding:20px;max-width:1100px;margin:0 auto}
 .dropzone.dragover{border-color:var(--accent);background:#0f1621}
 .linklike{color:var(--accent);text-decoration:underline;cursor:pointer}
 #fileInput{display:none}
-#uploadBtn{margin-top:10px;padding:10px 16px;border-radius:10px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+#uploadBtn{padding:10px 16px;border-radius:10px;border:0;background:var(--accent);color:#fff;cursor:pointer}
 #uploadBtn:disabled{opacity:.6;cursor:not-allowed}
+.ghost{padding:10px 16px;border-radius:10px;border:1px solid #253142;background:#0f1621;color:var(--txt);cursor:pointer}
+.ghost:disabled{opacity:.6;cursor:not-allowed}
 .status{margin-top:8px;color:var(--muted);min-height:1.2em}
 #files h2{margin:14px 0}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
@@ -190,8 +194,12 @@ main{padding:20px;max-width:1100px;margin:0 auto}
       <p>Перетащите файлы сюда или <label for="fileInput" class="linklike">выберите</label></p>
       <input id="fileInput" type="file" multiple />
     </div>
-    <button id="uploadBtn">Загрузить</button>
+    <div class="controls">
+      <button id="uploadBtn">Загрузить</button>
+      <button id="reindexBtn" class="ghost">Переиндексация</button>
+    </div>
     <div id="uploadStatus" class="status"></div>
+    <div id="reindexStatus" class="status"></div>
   </section>
   <section id="files">
     <h2>Файлы</h2>
@@ -212,7 +220,9 @@ main{padding:20px;max-width:1100px;margin:0 auto}
 const dropzone=document.getElementById("dropzone");
 const fileInput=document.getElementById("fileInput");
 const uploadBtn=document.getElementById("uploadBtn");
+const reindexBtn=document.getElementById("reindexBtn");
 const statusEl=document.getElementById("uploadStatus");
+const reindexStatus=document.getElementById("reindexStatus");
 const fileList=document.getElementById("fileList");
 const tpl=document.getElementById("fileCardTpl");
 let queue=[];
@@ -226,6 +236,11 @@ uploadBtn.addEventListener("click",async()=>{if(!queue.length){statusEl.textCont
  const resp=await fetch("/api/upload",{method:"POST",body:form});if(!resp.ok)throw new Error("upload failed");
  const data=await resp.json();statusEl.textContent=`Загружено: ${data.saved.join(", ")}`;queue=[];await refreshList();}
  catch(e){console.error(e);statusEl.textContent="Ошибка загрузки";}finally{uploadBtn.disabled=false;fileInput.value="";}});
+reindexBtn.addEventListener("click",async()=>{if(!confirm("Переиндексировать все файлы?"))return;
+ reindexBtn.disabled=true;reindexStatus.textContent="Переиндексация запущена…";try{const resp=await fetch("/api/reindex",{method:"POST"});
+ const data=await resp.json();if(!resp.ok)throw new Error(data?.error||"reindex failed");
+ reindexStatus.textContent=`Готово: ${data.indexed}/${data.total}`;await refreshList();}
+ catch(e){console.error(e);reindexStatus.textContent="Ошибка переиндексации";}finally{reindexBtn.disabled=false;}});
 async function refreshList(){fileList.innerHTML="";const resp=await fetch("/api/files");const data=await resp.json();
  for(const f of data.files){const node=tpl.content.firstElementChild.cloneNode(true);
  node.querySelector(".title").textContent=f.name;node.querySelector(".meta").textContent=fmtSize(f.size);
@@ -304,6 +319,14 @@ def create_web_app(upload_dir: Path) -> web.Application:
         return web.json_response({"saved": saved})
 
     app.router.add_post("/api/upload", upload_file)
+
+    async def reindex_all(_: web.Request) -> web.Response:
+        svc = OpenSearchService()
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, svc.reindex_folder, upload_dir)
+        return web.json_response(result)
+
+    app.router.add_post("/api/reindex", reindex_all)
 
     async def search_preview(request: web.Request) -> web.Response:
         token = request.match_info.get("token", "").strip()

@@ -10,8 +10,11 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .dropzone.dragover { border-color: var(--accent); background: #0f1621; }
 .linklike { color: var(--accent); text-decoration: underline; cursor: pointer; }
 #fileInput { display: none; }
-#uploadBtn { margin-top: 10px; padding: 10px 16px; border-radius: 10px; border: 0; background: var(--accent); color: white; cursor: pointer; }
+#uploadBtn { padding: 10px 16px; border-radius: 10px; border: 0; background: var(--accent); color: white; cursor: pointer; }
 #uploadBtn:disabled { opacity: .6; cursor: not-allowed; }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.ghost { padding: 10px 16px; border-radius: 10px; border: 1px solid #253142; background: #0f1621; color: var(--txt); cursor: pointer; }
+.ghost:disabled { opacity: .6; cursor: not-allowed; }
 .status { margin-top: 8px; color: var(--muted); min-height: 1.2em; }
 
 #files h2 { margin: 14px 0; }
