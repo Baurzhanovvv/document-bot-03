@@ -435,7 +435,6 @@ class OpenSearchService:
         if len(terms) == 2:
             file_query = terms[1]
             content_query = terms[0]
-            file_query_lc = file_query.lower()
             query_block = {
                 "bool": {
                     "must": [
@@ -468,19 +467,6 @@ class OpenSearchService:
                                             "path.keyword": {
                                                 "value": f"*{file_query}*",
                                                 "case_insensitive": True
-                                            }
-                                        }
-                                    },
-                                    {
-                                        "script": {
-                                            "script": {
-                                                "source": (
-                                                    "(doc['filename.keyword'].size()!=0 && "
-                                                    "doc['filename.keyword'].value.toLowerCase().contains(params.q)) || "
-                                                    "(doc['path.keyword'].size()!=0 && "
-                                                    "doc['path.keyword'].value.toLowerCase().contains(params.q))"
-                                                ),
-                                                "params": {"q": file_query_lc},
                                             }
                                         }
                                     }
