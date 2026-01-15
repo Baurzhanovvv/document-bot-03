@@ -453,6 +453,7 @@ class OpenSearchService:
             file_query = terms[1]
             content_query = terms[0]
             file_query_lc = file_query.lower()
+            file_query_regex = self._build_ci_regex(file_query)
             log.info("Search split: content=%r file=%r", content_query, file_query)
             query_block = {
                 "bool": {
@@ -484,6 +485,20 @@ class OpenSearchService:
                                         "wildcard": {
                                             "path_lc": {
                                                 "value": f"*{file_query_lc}*"
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "regexp": {
+                                            "filename.keyword": {
+                                                "value": file_query_regex
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "regexp": {
+                                            "path.keyword": {
+                                                "value": file_query_regex
                                             }
                                         }
                                     }
@@ -587,6 +602,22 @@ class OpenSearchService:
                 "snippet": snippet,
             })
         return out
+
+    @staticmethod
+    def _build_ci_regex(term: str) -> str:
+        """Case-insensitive regex for keyword fields without scripting."""
+        parts: List[str] = []
+        for ch in term:
+            if ch.isalpha():
+                lo = ch.lower()
+                up = ch.upper()
+                if lo != up:
+                    parts.append(f"[{re.escape(lo)}{re.escape(up)}]")
+                else:
+                    parts.append(re.escape(ch))
+            else:
+                parts.append(re.escape(ch))
+        return ".*" + "".join(parts) + ".*"
 
     @staticmethod
     def _sanitize_for_telegram(text: str) -> str:
