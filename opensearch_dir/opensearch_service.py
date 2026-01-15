@@ -76,6 +76,15 @@ class OpenSearchService:
         if self._client is not None:
             return self._client
         try:
+            log.info(
+                "OpenSearch connect: %s://%s:%s index=%s ssl=%s verify=%s",
+                self.scheme,
+                self.host,
+                self.port,
+                self.index,
+                self.use_ssl,
+                self.verify,
+            )
             client = OpenSearch(
                 hosts=[{"host": self.host, "port": self.port, "scheme": self.scheme}],
                 http_auth=(self.user, self.password),
@@ -99,18 +108,20 @@ class OpenSearchService:
             return client
 
         except Exception as e:
-            log.warning("OpenSearch connect failed: %s", e)
+            log.exception("OpenSearch connect failed: %s", e)
             return None
 
     def _ensure_index(self, client: OpenSearch) -> None:
         """Создаёт индекс с настроенными synonym filters"""
         try:
+            log.info("Ensure index: %s", self.index)
             if client.indices.exists(index=self.index):
                 log.info(f"Index {self.index} already exists")
                 return
 
             # Получаем список синонимов
             synonyms = self._get_synonyms_config()
+            log.debug("Synonyms rules: %s", len(synonyms))
 
             body = {
                 "settings": {
@@ -212,7 +223,7 @@ class OpenSearchService:
             log.info(f"Created index {self.index} with automatic synonyms")
 
         except Exception as e:
-            log.info(f"Index creation skipped: {e}")
+            log.exception("Index creation skipped: %s", e)
 
     def update_synonyms(self, new_synonyms: List[str]) -> Dict[str, Any]:
         """
@@ -224,6 +235,7 @@ class OpenSearchService:
             return {"error": "OpenSearch unavailable"}
 
         try:
+            log.info("Update synonyms: %s rules", len(new_synonyms))
             # Закрываем индекс
             client.indices.close(index=self.index)
 
@@ -248,7 +260,7 @@ class OpenSearchService:
             return {"ok": True, "message": f"Updated {len(new_synonyms)} synonym rules"}
 
         except Exception as e:
-            log.error(f"Failed to update synonyms: {e}")
+            log.exception("Failed to update synonyms: %s", e)
             # Пытаемся открыть индекс обратно
             try:
                 client.indices.open(index=self.index)
@@ -271,6 +283,7 @@ class OpenSearchService:
 
         p = Path(file_path)
         if not p.exists() or not p.is_file():
+            log.warning("Index file skipped (not found): %s", p)
             return {"error": "file not found"}
 
         base_dir = Path(os.getenv("UPLOAD_DIR", "/data/uploads")).resolve()
@@ -281,6 +294,7 @@ class OpenSearchService:
 
         content, content_indexed = "", False
         try:
+            log.info("Index file start: %s", p)
             with open(p, "rb") as f:
                 r = requests.put(
                     self._tika_url(),
@@ -291,8 +305,9 @@ class OpenSearchService:
             r.raise_for_status()
             content = r.text or ""
             content_indexed = True
+            log.debug("Tika extracted content length: %s", len(content))
         except Exception as e:
-            log.info("Tika extract failed (%s), indexing metadata only", e)
+            log.exception("Tika extract failed (%s), indexing metadata only", e)
 
         doc = {
             "path": rel.as_posix(),
@@ -307,9 +322,10 @@ class OpenSearchService:
 
         try:
             client.index(index=self.index, body=doc, refresh=refresh)
+            log.info("Index file success: %s", doc["path"])
             return {"ok": True, "path": doc["path"], "content_indexed": content_indexed}
         except Exception as e:
-            log.warning("index error: %s", e)
+            log.exception("index error: %s", e)
             return {"error": str(e)}
 
     def reindex_folder(self, folder: Path, *, refresh: bool = True, recreate: bool = True) -> Dict[str, Any]:
@@ -321,11 +337,12 @@ class OpenSearchService:
         if not target.exists():
             return {"error": f"folder not found: {target}"}
 
+        log.info("Reindex folder start: %s recreate=%s", target, recreate)
         if recreate:
             try:
                 client.indices.delete(index=self.index, ignore=[404])
             except Exception as e:
-                log.warning("index delete failed: %s", e)
+                log.exception("index delete failed: %s", e)
             self._ensure_index(client)
 
         total = 0
@@ -335,6 +352,7 @@ class OpenSearchService:
             if not p.is_file():
                 continue
             total += 1
+            log.debug("Reindex file: %s", p)
             res = self.index_file(p, refresh=False)
             if res.get("ok"):
                 indexed += 1
@@ -346,8 +364,9 @@ class OpenSearchService:
             try:
                 client.indices.refresh(index=self.index)
             except Exception as e:
-                log.warning("refresh failed: %s", e)
+                log.exception("refresh failed: %s", e)
 
+        log.info("Reindex folder done: total=%s indexed=%s errors=%s", total, indexed, len(errors))
         return {
             "ok": True,
             "total": total,
@@ -360,6 +379,7 @@ class OpenSearchService:
         if client is None:
             return {"skipped": "opensearch unavailable"}
         rel_path = (rel_path or "").strip().lstrip("/")
+        log.info("Delete by path: %s", rel_path)
         query = {
             "bool": {
                 "should": [
@@ -377,9 +397,10 @@ class OpenSearchService:
                 refresh=True,
                 ignore_unavailable=True,
             )
+            log.info("Delete by path done: %s", rel_path)
             return resp or {"ok": True}
         except Exception as e:
-            log.warning("delete_by_query error: %s", e)
+            log.exception("delete_by_query error: %s", e)
             return {"error": str(e)}
 
     def search(
@@ -400,17 +421,20 @@ class OpenSearchService:
         n = size if size is not None else (limit if limit is not None else 5)
 
         if not q:
+            log.debug("Search skipped: empty query")
             return []
 
         client = self._get_client()
         if client is None:
+            log.warning("Search skipped: opensearch unavailable")
             return []
 
         terms = [t for t in re.findall(r"\w+", q, flags=re.UNICODE) if t]
         content_query = q
-        if len(terms) >= 2:
+        log.info("Search start: q=%r terms=%s offset=%s size=%s", q, len(terms), offset, n)
+        if len(terms) == 2:
             file_query = terms[1]
-            content_query = " ".join([terms[0], *terms[2:]]).strip()
+            content_query = terms[0]
             query_block = {
                 "bool": {
                     "must": [
@@ -484,13 +508,15 @@ class OpenSearchService:
         }
 
         try:
+            log.debug("Search query: %s", query_block)
             resp = client.search(index=self.index, body=body, ignore_unavailable=True)
             hits = (resp.get("hits") or {}).get("hits") or []
         except Exception as e:
-            log.warning("search error: %s", e)
+            log.exception("search error: %s", e)
             return []
 
         out: List[Dict[str, Any]] = []
+        log.info("Search hits: %s", len(hits))
         for h in hits:
             src = h.get("_source") or {}
             content = src.get("content") or ""
