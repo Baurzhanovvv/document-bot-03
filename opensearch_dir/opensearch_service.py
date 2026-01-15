@@ -494,17 +494,28 @@ class OpenSearchService:
         for h in hits:
             src = h.get("_source") or {}
             content = src.get("content") or ""
-
-            # Используем highlight если есть, иначе делаем snippet
             highlight = h.get("highlight") or {}
-            if "content" in highlight:
-                snippet = self._make_extended_snippet(content, content_query, highlight["content"])
+            content_highlights = highlight.get("content", [])
+            if content_highlights:
+                snippet = "\n\n".join([self._sanitize_for_telegram(frag) for frag in content_highlights])
             else:
-                snippet = self._make_extended_snippet(content, content_query)
+                if not src.get("content_indexed", True):
+                    snippet = "(содержимое не проиндексировано)"
+                elif content:
+                    max_len = 700
+                    snippet = html.escape(content[:max_len]) + ("…" if len(content) > max_len else "")
+                else:
+                    snippet = "(фрагмент недоступен)"
+
+            fname_high = highlight.get("filename", [])
+            if fname_high:
+                title = self._sanitize_for_telegram(fname_high[0])
+            else:
+                title = src.get("filename") or "Документ"
 
             out.append({
                 "filename": src.get("filename") or "Документ",
-                "title": src.get("filename") or "Документ",
+                "title": title,
                 "path": src.get("path") or "",
                 "score": float(h.get("_score") or 0.0),
                 "snippet": snippet,
@@ -528,90 +539,6 @@ class OpenSearchService:
         return text
 
     @staticmethod
-    def _make_extended_snippet(
-        content: str,
-        query: str,
-        highlight_fragments: List[str] | None = None,
-        *,
-        before: int = 120,
-        after: int = 620,
-    ) -> str:
-        """
-        Формирует сниппет длиной > 600 символов для каждого найденного слова.
-
-        Отдаём несколько фрагментов текста, каждый из которых содержит совпавшее
-        слово, +600 символов после совпадения (и небольшой контекст до него).
-        """
-
-        if not content:
-            return "(фрагмент недоступен)"
-
-        # Нормализуем текст
-        normalized = (
-            content.replace("\r", " ").replace("\n", " ")
-            if isinstance(content, str)
-            else ""
-        )
-        normalized = re.sub(r"\s+", " ", normalized).strip()
-        if not normalized:
-            return "(фрагмент недоступен)"
-
-        # Определяем термины запроса
-        terms = [t for t in re.findall(r"\w+", query, flags=re.UNICODE) if t]
-        if not terms and highlight_fragments:
-            # fallback — извлекаем слова из highlight
-            joined = " ".join(highlight_fragments)
-            terms = [t for t in re.findall(r"\w+", joined, flags=re.UNICODE) if t]
-        if not terms:
-            terms = [normalized[:1]]
-
-        unique_terms = []
-        seen_terms = set()
-        for term in terms:
-            key = term.lower()
-            if key not in seen_terms:
-                seen_terms.add(key)
-                unique_terms.append(term)
-
-        fragments: List[str] = []
-        used_ranges: list[tuple[int, int]] = []
-        for term in unique_terms:
-            pattern = re.compile(re.escape(term), flags=re.IGNORECASE)
-            match = pattern.search(normalized)
-            if not match:
-                continue
-
-            start = max(0, match.start() - before)
-            end = min(len(normalized), match.end() + after)
-            # Проверяем, что участок не пересекается с уже добавленными
-            overlaps = any(not (end <= a or start >= b) for a, b in used_ranges)
-            if overlaps:
-                continue
-            used_ranges.append((start, end))
-            fragment = normalized[start:end]
-            fragments.append(fragment)
-
-        if not fragments:
-            fragments = [normalized[: before + after]]
-
-        # Готовим HTML с подсветкой совпавших слов
-        highlighted: List[str] = []
-        for fragment in fragments:
-            escaped = html.escape(fragment, quote=False)
-            for term in unique_terms:
-                escaped_term = html.escape(term, quote=False)
-                escaped = re.sub(
-                    re.escape(escaped_term),
-                    lambda m: f"<b>{m.group(0)}</b>",
-                    escaped,
-                    flags=re.IGNORECASE,
-                )
-            highlighted.append(escaped)
-
-        snippet = "\n\n".join(highlighted)
-        return snippet if snippet else "(фрагмент недоступен)"
-
-    @staticmethod
     def _guess_mime(p: Path) -> str:
         ext = p.suffix.lower().lstrip(".")
         return {
@@ -625,88 +552,3 @@ class OpenSearchService:
             "xls": "application/vnd.ms-excel",
             "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }.get(ext, "application/octet-stream")
-
-    # @staticmethod
-    # def _make_snippet(content: str, q: str, width: int = 600) -> str:
-    #     if not content:
-    #         return "(фрагмент недоступен)"
-    #     txt = content.replace("\r", " ").replace("\n", " ")
-    #     txt = re.sub(r"\s+", " ", txt).strip()
-    #     if not q:
-    #         return html.escape(txt[:width]) + ("…" if len(txt) > width else "")
-    #
-    #     terms = [t for t in re.findall(r"\w+", q, flags=re.UNICODE) if len(t) >= 3] or [q]
-    #     pattern = re.compile("|".join(map(re.escape, terms)), re.IGNORECASE)
-    #     m = pattern.search(txt)
-    #     pos = m.start() if m else 0
-    #     start = max(0, pos - width // 2)
-    #     end = min(len(txt), start + width)
-    #     frag = txt[start:end]
-    #     if start > 0:
-    #         frag = "…" + frag
-    #     if end < len(txt):
-    #         frag = frag + "…"
-    #     return html.escape(frag)
-    @staticmethod
-    def _make_snippet(
-            content: str,
-            q: str,
-            after_min: int = 70,
-            after_max: int = 150,
-            max_matches: int = 50,
-    ) -> str:
-        import re, html
-        if not content:
-            return "(фрагмент недоступен)"
-
-        txt = re.sub(r"[ \t\f\v]+", " ", content.replace("\r", " ").replace("\n", " ")).strip()
-        if not txt:
-            return "(фрагмент недоступен)"
-        if not q or not q.strip():
-            end = min(len(txt), after_max)
-            return html.escape(txt[:end] + (" …" if len(txt) > end else ""))
-
-        terms = [t for t in re.split(r"\s+", q.strip()) if len(t) >= 2] or [q.strip()]
-        low = txt.lower()
-        spans = []
-
-        for t in terms:
-            pat = re.escape(t.lower())
-            for m in re.finditer(pat, low, flags=re.IGNORECASE):
-                s, e = m.start(), m.end()
-                end_target = min(e + after_min, len(txt))
-                hard_cap = min(e + after_max, len(txt))
-                if end_target < hard_cap:
-                    space_pos = txt.find(" ", end_target, hard_cap)
-                    end_target = space_pos if space_pos != -1 else hard_cap
-                else:
-                    end_target = hard_cap
-                spans.append((s, end_target))
-                if len(spans) >= max_matches:
-                    break
-            if len(spans) >= max_matches:
-                break
-
-        if not spans:
-            end = min(len(txt), after_max)
-            return html.escape(txt[:end] + (" …" if len(txt) > end else ""))
-
-        spans.sort()
-        merged = []
-        ms, me = spans[0]
-        for s, e in spans[1:]:
-            if s <= me:
-                me = max(me, e)
-            else:
-                merged.append((ms, me))
-                ms, me = s, e
-        merged.append((ms, me))
-
-        parts = []
-        for s, e in merged:
-            part = txt[s:e].strip()
-            suffix = " …" if e < len(txt) else ""
-            parts.append(part + suffix)
-        if merged and merged[0][0] > 0:
-            parts[0] = "… " + parts[0]
-        return html.escape(" ".join(parts))
