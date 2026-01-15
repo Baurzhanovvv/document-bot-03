@@ -117,6 +117,19 @@ class OpenSearchService:
             log.info("Ensure index: %s", self.index)
             if client.indices.exists(index=self.index):
                 log.info(f"Index {self.index} already exists")
+                # Добавляем поля для поиска по имени файла без учёта регистра
+                try:
+                    client.indices.put_mapping(
+                        index=self.index,
+                        body={
+                            "properties": {
+                                "filename_lc": {"type": "keyword"},
+                                "path_lc": {"type": "keyword"},
+                            }
+                        },
+                    )
+                except Exception as e:
+                    log.debug("Put mapping skipped: %s", e)
                 return
 
             # Получаем список синонимов
@@ -197,6 +210,7 @@ class OpenSearchService:
                 "mappings": {
                     "properties": {
                         "path": {"type": "keyword"},
+                        "path_lc": {"type": "keyword"},
                         "filename": {
                             "type": "text",
                             "analyzer": "ruen_index",
@@ -205,6 +219,7 @@ class OpenSearchService:
                                 "keyword": {"type": "keyword"}
                             }
                         },
+                        "filename_lc": {"type": "keyword"},
                         "content": {
                             "type": "text",
                             "analyzer": "ruen_index",
@@ -311,7 +326,9 @@ class OpenSearchService:
 
         doc = {
             "path": rel.as_posix(),
+            "path_lc": rel.as_posix().lower(),
             "filename": p.name,
+            "filename_lc": p.name.lower(),
             "content": content,
             "uploaded_at": datetime.utcfromtimestamp(p.stat().st_mtime).isoformat(),
             "size": p.stat().st_size,
@@ -435,6 +452,8 @@ class OpenSearchService:
         if len(terms) == 2:
             file_query = terms[1]
             content_query = terms[0]
+            file_query_lc = file_query.lower()
+            log.info("Search split: content=%r file=%r", content_query, file_query)
             query_block = {
                 "bool": {
                     "must": [
@@ -456,17 +475,15 @@ class OpenSearchService:
                                     },
                                     {
                                         "wildcard": {
-                                            "filename.keyword": {
-                                                "value": f"*{file_query}*",
-                                                "case_insensitive": True
+                                            "filename_lc": {
+                                                "value": f"*{file_query_lc}*"
                                             }
                                         }
                                     },
                                     {
                                         "wildcard": {
-                                            "path.keyword": {
-                                                "value": f"*{file_query}*",
-                                                "case_insensitive": True
+                                            "path_lc": {
+                                                "value": f"*{file_query_lc}*"
                                             }
                                         }
                                     }
