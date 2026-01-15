@@ -93,6 +93,7 @@ git pull origin main
 server {
     listen 80;
     server_name ваш-домен.com;
+    client_max_body_size 1300m;
 
     location / {
         proxy_pass http://localhost:8000;
@@ -100,6 +101,10 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        send_timeout 300s;
     }
 }
 ```

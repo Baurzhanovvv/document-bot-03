@@ -236,11 +236,19 @@ uploadBtn.addEventListener("click",async()=>{if(!queue.length){statusEl.textCont
  const resp=await fetch("/api/upload",{method:"POST",body:form});if(!resp.ok)throw new Error("upload failed");
  const data=await resp.json();statusEl.textContent=`Загружено: ${data.saved.join(", ")}`;queue=[];await refreshList();}
  catch(e){console.error(e);statusEl.textContent="Ошибка загрузки";}finally{uploadBtn.disabled=false;fileInput.value="";}});
+async function fetchReindexStatus(){const resp=await fetch("/api/reindex/status");return resp.json();}
+async function waitForReindex(){while(true){await new Promise(r=>setTimeout(r,1500));
+ const data=await fetchReindexStatus();
+ if(data.state==="running"){reindexStatus.textContent="Переиндексация выполняется…";continue;}
+ if(data.state==="done"){const res=data.result||{};reindexStatus.textContent=`Готово: ${res.indexed||0}/${res.total||0}`;await refreshList();break;}
+ if(data.state==="error"){reindexStatus.textContent=`Ошибка переиндексации: ${data.error||"unknown"}`;break;}
+ reindexStatus.textContent="Переиндексация не запущена";break;}
+ reindexBtn.disabled=false;}
 reindexBtn.addEventListener("click",async()=>{if(!confirm("Переиндексировать все файлы?"))return;
  reindexBtn.disabled=true;reindexStatus.textContent="Переиндексация запущена…";try{const resp=await fetch("/api/reindex",{method:"POST"});
- const data=await resp.json();if(!resp.ok)throw new Error(data?.error||"reindex failed");
- reindexStatus.textContent=`Готово: ${data.indexed}/${data.total}`;await refreshList();}
- catch(e){console.error(e);reindexStatus.textContent="Ошибка переиндексации";}finally{reindexBtn.disabled=false;}});
+ if(!resp.ok&&resp.status!==202){const data=await resp.json().catch(()=>({}));throw new Error(data?.error||"reindex failed");}
+ await waitForReindex();}
+ catch(e){console.error(e);reindexStatus.textContent="Ошибка переиндексации";reindexBtn.disabled=false;}});
 async function refreshList(){fileList.innerHTML="";const resp=await fetch("/api/files");const data=await resp.json();
  for(const f of data.files){const node=tpl.content.firstElementChild.cloneNode(true);
  node.querySelector(".title").textContent=f.name;node.querySelector(".meta").textContent=fmtSize(f.size);
@@ -249,6 +257,7 @@ async function refreshList(){fileList.innerHTML="";const resp=await fetch("/api/
  if(r.ok){node.remove();}else{alert("Не удалось удалить");}});fileList.appendChild(node);}}
 function fmtSize(n){if(n==null)return"";const u=["B","KB","MB","GB"];let i=0,v=n;while(v>=1024&&i<u.length-1){v/=1024;i++;}return `${v.toFixed((i===0)?0:1)} ${u[i]}`;}
 refreshList();
+fetchReindexStatus().then(data=>{if(data.state==="running"){reindexBtn.disabled=true;reindexStatus.textContent="Переиндексация выполняется…";waitForReindex();}});
 </script>
 </html>
 """
@@ -257,6 +266,8 @@ def create_web_app(upload_dir: Path) -> web.Application:
     upload_dir.mkdir(parents=True, exist_ok=True)
     # Allow large uploads (e.g., 1.2GB). aiohttp default is much smaller.
     app = web.Application(client_max_size=1300 * 1024 ** 2)
+    app["reindex_status"] = {"state": "idle"}
+    app["reindex_task"] = None
 
     # Статика, если существует
     project_root = Path(__file__).resolve().parent.parent
@@ -320,13 +331,34 @@ def create_web_app(upload_dir: Path) -> web.Application:
 
     app.router.add_post("/api/upload", upload_file)
 
-    async def reindex_all(_: web.Request) -> web.Response:
+    async def _run_reindex(app: web.Application) -> None:
         svc = OpenSearchService()
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, svc.reindex_folder, upload_dir)
-        return web.json_response(result)
+        try:
+            result = await loop.run_in_executor(None, svc.reindex_folder, upload_dir)
+            app["reindex_status"] = {"state": "done", "result": result}
+        except Exception as e:
+            log.exception("reindex failed")
+            app["reindex_status"] = {"state": "error", "error": str(e)}
+        finally:
+            app["reindex_task"] = None
+
+    async def reindex_all(_: web.Request) -> web.Response:
+        if app.get("reindex_task"):
+            return web.json_response(
+                {"state": "running", "detail": "reindex already running"},
+                status=202,
+            )
+        app["reindex_status"] = {"state": "running"}
+        app["reindex_task"] = asyncio.create_task(_run_reindex(app))
+        return web.json_response({"state": "running"}, status=202)
+
+    async def reindex_status(_: web.Request) -> web.Response:
+        status = app.get("reindex_status") or {"state": "idle"}
+        return web.json_response(status)
 
     app.router.add_post("/api/reindex", reindex_all)
+    app.router.add_get("/api/reindex/status", reindex_status)
 
     async def search_preview(request: web.Request) -> web.Response:
         token = request.match_info.get("token", "").strip()
