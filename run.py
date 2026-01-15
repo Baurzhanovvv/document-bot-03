@@ -1,5 +1,6 @@
 # run.py
 import asyncio
+import logging
 import os
 from pathlib import Path
 from aiohttp import web
@@ -19,6 +20,16 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.database.models import Base  # тут лежат твои модели (User, и т.д.)
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads"))
+
+
+def _configure_logging() -> None:
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        force=True,
+    )
 
 async def start_web(bot: Bot):
     app = create_web_app(UPLOAD_DIR)
@@ -48,6 +59,7 @@ async def init_db():
     await engine.dispose()
 
 async def main():
+    _configure_logging()
     # сначала – инициализация БД
     await init_db()
 
