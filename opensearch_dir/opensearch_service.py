@@ -439,16 +439,39 @@ class OpenSearchService:
                 "bool": {
                     "must": [
                         {
-                            "multi_match": {
-                                "query": file_query,
-                                "fields": [
-                                    "filename^5",
-                                    "path^2"
+                            "bool": {
+                                "should": [
+                                    {
+                                        "multi_match": {
+                                            "query": file_query,
+                                            "fields": [
+                                                "filename^5",
+                                                "path^2"
+                                            ],
+                                            "type": "best_fields",
+                                            "operator": "OR",
+                                            "fuzziness": "AUTO",
+                                            "minimum_should_match": "75%"
+                                        }
+                                    },
+                                    {
+                                        "wildcard": {
+                                            "filename.keyword": {
+                                                "value": f"*{file_query}*",
+                                                "case_insensitive": True
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "wildcard": {
+                                            "path.keyword": {
+                                                "value": f"*{file_query}*",
+                                                "case_insensitive": True
+                                            }
+                                        }
+                                    }
                                 ],
-                                "type": "best_fields",
-                                "operator": "OR",
-                                "fuzziness": "AUTO",
-                                "minimum_should_match": "75%"
+                                "minimum_should_match": 1
                             }
                         }
                     ],
