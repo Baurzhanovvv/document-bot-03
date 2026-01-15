@@ -409,72 +409,35 @@ class OpenSearchService:
         terms = [t for t in re.findall(r"\w+", q, flags=re.UNICODE) if t]
         content_query = q
         if len(terms) >= 2:
-            content_query = terms[0]
-            file_query = " ".join(terms[1:]).strip()
-            # Поддерживаем оба порядка: "лечение гепатита" и "гепатит лечение".
+            file_query = terms[1]
+            content_query = " ".join([terms[0], *terms[2:]]).strip()
             query_block = {
                 "bool": {
-                    "should": [
+                    "must": [
                         {
-                            "bool": {
-                                "must": [
-                                    {
-                                        "multi_match": {
-                                            "query": file_query,
-                                            "fields": [
-                                                "filename^5",
-                                                "path^2"
-                                            ],
-                                            "type": "best_fields",
-                                            "operator": "AND",
-                                            "fuzziness": "AUTO",
-                                            "minimum_should_match": "75%"
-                                        }
-                                    },
-                                    {
-                                        "multi_match": {
-                                            "query": content_query,
-                                            "fields": ["content^3"],
-                                            "type": "best_fields",
-                                            "operator": "OR",
-                                            "fuzziness": "AUTO",
-                                            "minimum_should_match": "75%"
-                                        }
-                                    }
-                                ]
+                            "multi_match": {
+                                "query": file_query,
+                                "fields": [
+                                    "filename^5",
+                                    "path^2"
+                                ],
+                                "type": "best_fields",
+                                "operator": "OR",
+                                "fuzziness": "AUTO",
+                                "minimum_should_match": "75%"
                             }
                         },
                         {
-                            "bool": {
-                                "must": [
-                                    {
-                                        "multi_match": {
-                                            "query": content_query,
-                                            "fields": [
-                                                "filename^5",
-                                                "path^2"
-                                            ],
-                                            "type": "best_fields",
-                                            "operator": "AND",
-                                            "fuzziness": "AUTO",
-                                            "minimum_should_match": "75%"
-                                        }
-                                    },
-                                    {
-                                        "multi_match": {
-                                            "query": file_query,
-                                            "fields": ["content^3"],
-                                            "type": "best_fields",
-                                            "operator": "OR",
-                                            "fuzziness": "AUTO",
-                                            "minimum_should_match": "75%"
-                                        }
-                                    }
-                                ]
+                            "multi_match": {
+                                "query": content_query,
+                                "fields": ["content^3"],
+                                "type": "best_fields",
+                                "operator": "OR",
+                                "fuzziness": "AUTO",
+                                "minimum_should_match": "75%"
                             }
                         }
-                    ],
-                    "minimum_should_match": 1
+                    ]
                 }
             }
         else:
