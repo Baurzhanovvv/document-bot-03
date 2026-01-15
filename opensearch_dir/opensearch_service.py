@@ -426,7 +426,9 @@ class OpenSearchService:
                                 "fuzziness": "AUTO",
                                 "minimum_should_match": "75%"
                             }
-                        },
+                        }
+                    ],
+                    "should": [
                         {
                             "multi_match": {
                                 "query": content_query,
@@ -436,8 +438,12 @@ class OpenSearchService:
                                 "fuzziness": "AUTO",
                                 "minimum_should_match": "75%"
                             }
+                        },
+                        {
+                            "term": {"content_indexed": False}
                         }
-                    ]
+                    ],
+                    "minimum_should_match": 1
                 }
             }
         else:
